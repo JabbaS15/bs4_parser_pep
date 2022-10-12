@@ -1,8 +1,8 @@
 import argparse
-
-from constants import BASE_DIR
 import logging
 from logging.handlers import RotatingFileHandler
+
+from constants import BASE_DIR
 
 LOG_FORMAT = '"%(asctime)s - [%(levelname)s] - %(message)s"'
 DT_FORMAT = '%d.%m.%Y %H:%M:%S'
@@ -15,14 +15,12 @@ def configure_argument_parser(available_modes):
         choices=available_modes,
         help='Режимы работы парсера'
     )
-
     parser.add_argument(
         '-c',
         '--clear-cache',
         action='store_true',
         help='Очистка кеша'
     )
-    # Новый аргумент --output вместо аргумента --pretty
     parser.add_argument(
         '-o',
         '--output',
