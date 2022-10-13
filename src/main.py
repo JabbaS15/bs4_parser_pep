@@ -8,8 +8,8 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 from configs import configure_argument_parser, configure_logging
-from constants import BASE_DIR, EXPECTED_STATUS, MAIN_DOC_URL, MAIN_PEP_URL, \
-    DOWNLOADS_URL, DOWNLOADS_DIR
+from constants import EXPECTED_STATUS, MAIN_DOC_URL, MAIN_PEP_URL, \
+    DOWNLOADS_URL, BASE_DIR
 from outputs import control_output
 from exceptions import TextNotFoundException
 from utils import find_tag, get_response
@@ -93,8 +93,9 @@ def download(session):
     pdf_a4_link = pdf_a4_tag['href']
     archive_url = urljoin(DOWNLOADS_URL, pdf_a4_link)
     filename = archive_url.split('/')[-1]
-    DOWNLOADS_DIR.mkdir(exist_ok=True)
-    archive_path = DOWNLOADS_DIR / filename
+    downloads_dir = BASE_DIR / 'downloads'
+    downloads_dir .mkdir(exist_ok=True)
+    archive_path = downloads_dir  / filename
     response = session.get(archive_url)
 
     with open(archive_path, 'wb') as file:
