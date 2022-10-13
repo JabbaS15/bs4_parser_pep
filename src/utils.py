@@ -9,8 +9,10 @@ def get_response(session, url):
     try:
         response = session.get(url)
         response.encoding = 'utf-8'
+        if response is None:
+            raise AttributeError
         return response
-    except RequestException:
+    except (RequestException, AttributeError):
         logging.exception(
             f'Возникла ошибка при загрузке страницы {url}',
             stack_info=True

@@ -8,16 +8,16 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 from configs import configure_argument_parser, configure_logging
-from constants import BASE_DIR, EXPECTED_STATUS, MAIN_DOC_URL, MAIN_PEP_URL
+from constants import BASE_DIR, EXPECTED_STATUS, MAIN_DOC_URL, MAIN_PEP_URL, \
+    DOWNLOADS_URL, DOWNLOADS_DIR
 from outputs import control_output
+from exceptions import TextNotFoundException
 from utils import find_tag, get_response
 
 
 def whats_new(session):
     whats_new_url = urljoin(MAIN_DOC_URL, 'whatsnew/')
     response = get_response(session, whats_new_url)
-    if response is None:
-        return
     soup = BeautifulSoup(response.text, features='lxml')
     main_div = find_tag(
         soup,
@@ -39,8 +39,6 @@ def whats_new(session):
         href = version_a_tag['href']
         version_link = urljoin(whats_new_url, href)
         response = get_response(session, version_link)
-        if response is None:
-            continue
         soup = BeautifulSoup(response.text, features='lxml')
         h1 = find_tag(soup, tag='h1').text
         dl = find_tag(soup, tag='dl').text.replace('\n', ' ')
@@ -50,8 +48,6 @@ def whats_new(session):
 
 def latest_versions(session):
     response = get_response(session, MAIN_DOC_URL)
-    if response is None:
-        return
     soup = BeautifulSoup(response.text, features='lxml')
     sidebar = find_tag(
         soup,
@@ -59,14 +55,19 @@ def latest_versions(session):
         attrs={'class': 'sphinxsidebarwrapper'}
     )
     ul_tags = sidebar.find_all('ul')
+
     for ul in ul_tags:
         if 'All versions' in ul.text:
             a_tags = ul.find_all('a')
             break
     else:
-        raise Exception('Ничего не нашлось')
+        error_msg = 'Искомое значение не обнаружено'
+        logging.error(error_msg, stack_info=True)
+        raise TextNotFoundException(error_msg)
+
     results = [('Ссылка на документацию', 'Версия', 'Статус')]
     pattern = r'Python (?P<version>\d\.\d+) \((?P<status>.*)\)'
+
     for a_tag in a_tags:
         link = a_tag['href']
         text_match = re.search(pattern, a_tag.text)
@@ -75,14 +76,12 @@ def latest_versions(session):
         else:
             version, status = a_tag.text, ''
         results.append((link, version, status))
+
     return results
 
 
 def download(session):
-    downloads_url = urljoin(MAIN_DOC_URL, 'download.html')
-    response = get_response(session, downloads_url)
-    if response is None:
-        return
+    response = get_response(session, DOWNLOADS_URL)
     soup = BeautifulSoup(response.text, features='lxml')
     main_tag = find_tag(soup, tag='div', attrs={'role': 'main'})
     table_tag = find_tag(main_tag, tag='table', attrs={'class': 'docutils'})
@@ -92,23 +91,20 @@ def download(session):
         attrs={'href': re.compile(r'.+pdf-a4\.zip$')}
     )
     pdf_a4_link = pdf_a4_tag['href']
-    archive_url = urljoin(downloads_url, pdf_a4_link)
+    archive_url = urljoin(DOWNLOADS_URL, pdf_a4_link)
     filename = archive_url.split('/')[-1]
-    downloads_dir = BASE_DIR / 'downloads'
-    downloads_dir.mkdir(exist_ok=True)
-    archive_path = downloads_dir / filename
+    DOWNLOADS_DIR.mkdir(exist_ok=True)
+    archive_path = DOWNLOADS_DIR / filename
     response = session.get(archive_url)
+
     with open(archive_path, 'wb') as file:
         file.write(response.content)
     logging.info(f'Архив был загружен и сохранён: {archive_path}')
 
 
 def pep(session):
-    text = [('Статус', 'Количество')]
-    result = []
+    results = []
     response = get_response(session, MAIN_PEP_URL)
-    if response is None:
-        return
     soup = BeautifulSoup(response.text, features='lxml')
     pep_section = find_tag(
         soup,
@@ -118,24 +114,29 @@ def pep(session):
     pep_tbody = find_tag(pep_section, tag='tbody')
     pep_tr = pep_tbody.find_all('tr')
     for tr in tqdm(pep_tr):
-        pep_status = find_tag(tr, 'td').text[1:]
-        expected_status = EXPECTED_STATUS[pep_status]
-        href = find_tag(tr, 'a')['href']
-        pep_href = urljoin(MAIN_PEP_URL, href)
-        response = get_response(session, pep_href)
-        if response is None:
-            continue
-        soup = BeautifulSoup(response.text, features='lxml')
-        status = soup.find(text='Status').find_next('dd').text
-        if status not in expected_status:
-            logging.info(f'\n'
-                         f'Несовпадающие статусы:\n'
-                         f'{pep_href}\n'
-                         f'Статус в карточке: {status}\n'
-                         f'Ожидаемые статусы: {expected_status}\n')
-        result.append(status)
-    counter = Counter(result)
-    return text, counter.items(), [('Total', len(pep_tr))]
+        try:
+            pep_status = find_tag(tr, 'td').text[1:]
+            expected_status = EXPECTED_STATUS[pep_status]
+            href = find_tag(tr, 'a')['href']
+            pep_href = urljoin(MAIN_PEP_URL, href)
+            response = get_response(session, pep_href)
+            soup = BeautifulSoup(response.text, features='lxml')
+            status = soup.find(text='Status').find_next('dd').text
+
+            if status not in expected_status:
+                logging.info(f'\n'
+                             f'Несовпадающие статусы:\n'
+                             f'{pep_href}\n'
+                             f'Статус в карточке: {status}\n'
+                             f'Ожидаемые статусы: {expected_status}\n')
+            results.append(status)
+        except KeyError:
+            print(f'Статус - {pep_status} не найден!')
+    counter = Counter(results)
+    return (
+            [('Статус', 'Количество')]
+            + list(counter.items())
+            + [('Total', len(pep_tr))])
 
 
 MODE_TO_FUNCTION = {
@@ -149,7 +150,6 @@ MODE_TO_FUNCTION = {
 def main():
     configure_logging()
     logging.info('Парсер запущен!')
-
     arg_parser = configure_argument_parser(MODE_TO_FUNCTION.keys())
     args = arg_parser.parse_args()
     logging.info(f'Аргументы командной строки: {args}')
