@@ -8,8 +8,8 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 from configs import configure_argument_parser, configure_logging
-from constants import EXPECTED_STATUS, MAIN_DOC_URL, MAIN_PEP_URL, \
-    DOWNLOADS_URL, BASE_DIR
+from constants import (EXPECTED_STATUS, MAIN_DOC_URL, MAIN_PEP_URL,
+                       DOWNLOADS_URL, BASE_DIR)
 from outputs import control_output
 from exceptions import TextNotFoundException
 from utils import find_tag, get_response
@@ -34,6 +34,7 @@ def whats_new(session):
         attrs={'class': 'toctree-l1'}
     )
     results = [('Ссылка на статью', 'Заголовок', 'Редактор, Автор')]
+
     for section in tqdm(sections_by_python):
         version_a_tag = find_tag(section, tag='a')
         href = version_a_tag['href']
@@ -114,25 +115,26 @@ def pep(session):
     )
     pep_tbody = find_tag(pep_section, tag='tbody')
     pep_tr = pep_tbody.find_all('tr')
-    for tr in tqdm(pep_tr):
-        try:
-            pep_status = find_tag(tr, 'td').text[1:]
-            expected_status = EXPECTED_STATUS[pep_status]
-            href = find_tag(tr, 'a')['href']
-            pep_href = urljoin(MAIN_PEP_URL, href)
-            response = get_response(session, pep_href)
-            soup = BeautifulSoup(response.text, features='lxml')
-            status = soup.find(text='Status').find_next('dd').text
 
-            if status not in expected_status:
-                logging.info(f'\n'
-                             f'Несовпадающие статусы:\n'
-                             f'{pep_href}\n'
-                             f'Статус в карточке: {status}\n'
-                             f'Ожидаемые статусы: {expected_status}\n')
-            results.append(status)
+    for tr in tqdm(pep_tr):
+        pep_status = find_tag(tr, 'td').text[1:]
+        try:
+            expected_status = EXPECTED_STATUS[pep_status]
         except KeyError:
             print(f'Статус - {pep_status} не найден!')
+        href = find_tag(tr, 'a')['href']
+        pep_href = urljoin(MAIN_PEP_URL, href)
+        response = get_response(session, pep_href)
+        soup = BeautifulSoup(response.text, features='lxml')
+        status = soup.find(text='Status').find_next('dd').text
+
+        if status not in expected_status:
+            logging.info('\n'
+                         'Несовпадающие статусы:\n'
+                         f'{pep_href}\n'
+                         f'Статус в карточке: {status}\n'
+                         f'Ожидаемые статусы: {expected_status}\n')
+        results.append(status)
     counter = Counter(results)
     return (
             [('Статус', 'Количество')]
